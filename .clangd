@@ -1,0 +1,10 @@
+CompileFlags:
+  CompilationDatabase: examples/basic/build
+  Remove:
+    - -mlongcalls
+    - -fno-tree-switch-conversion
+    - -fstrict-volatile-bitfields
+    - -mdisable-hardware-atomics
+    - -fzero-init-padding-bits=all
+    - -fno-shrink-wrap
+    - -fno-malloc-dce
