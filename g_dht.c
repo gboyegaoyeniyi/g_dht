@@ -130,7 +130,7 @@ static esp_err_t dht_convert_data(dht_sensor_type_t sensor_type, uint8_t msb,
 
 esp_err_t dht_read_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
                         int16_t *humidity, int16_t *temperature) {
-  if (!humidity || !temperature)
+  if (!humidity && !temperature)
     return ESP_ERR_INVALID_ARG;
 
   uint8_t data[DHT_DATA_BITS] = {0};
@@ -171,11 +171,11 @@ esp_err_t dht_read_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
 };
 
 esp_err_t dht_read_float_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
-                              int16_t *humidity, int16_t *temperature) {
-  if (!humidity || !temperature)
+                              float *humidity, float *temperature) {
+  if (!humidity && !temperature)
     return ESP_ERR_INVALID_ARG;
 
-  int16_t i_humidity, i_temp;
+  int16_t i_humidity = 0, i_temp = 0;
   esp_err_t result =
       dht_read_data(sensor_type, pin, humidity ? &i_humidity : NULL,
                     temperature ? &i_temp : NULL);
@@ -183,10 +183,10 @@ esp_err_t dht_read_float_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
     return result;
 
   if (humidity)
-    *humidity = i_humidity / 10;
+    *humidity = i_humidity / 10.0f;
 
   if (temperature)
-    *temperature = i_temp / 10;
+    *temperature = i_temp / 10.0f;
 
   return ESP_OK;
-};
+}
