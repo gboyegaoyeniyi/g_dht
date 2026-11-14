@@ -1,10 +1,13 @@
 #include "g_dht.h"
 #include "driver/gpio.h"
 #include "esp_err.h"
+#include "esp_log.h"
 #include "hal/gpio_types.h"
+#include "soc/gpio_num.h"
 #include <esp_rom_sys.h>
 #include <freertos/FreeRTOS.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 #define DHT_TIMER_INTERVAL 2
 #define DHT_DATA_BITS 40
@@ -13,6 +16,8 @@
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
 #define PORT_ENTER_CRITICAL() portENTER_CRITICAL(&mux);
 #define PORT_EXIT_CRITICAL() portEXIT_CRITICAL(&mux);
+
+static const char *TAG = "dht";
 
 /**
  * Wait for specified time in timeout for the pin signal to reach the expected
@@ -40,9 +45,75 @@ static esp_err_t dht_await_pin_state(gpio_num_t pin, uint32_t timeout,
   return ESP_ERR_TIMEOUT;
 };
 
+static esp_err_t step_dht_init_phase(gpio_num_t pin, char phase) {
+  esp_err_t err = ESP_OK;
+  switch (phase) {
+  case 'B':
+    err = dht_await_pin_state(pin, 40, 0, NULL);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Initialization error at phase 'B'\n");
+      PORT_EXIT_CRITICAL();
+    }
+    return err;
+  case 'C':
+    err = dht_await_pin_state(pin, 88, 1, NULL);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Initialization error at phase 'C'\n");
+      PORT_EXIT_CRITICAL();
+    }
+    return err;
+  case 'D':
+    err = dht_await_pin_state(pin, 88, 0, NULL);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "Initialization error at phase 'D'\n");
+      PORT_EXIT_CRITICAL();
+    }
+    return err;
+  }
+
+  return err;
+}
+
 static esp_err_t fetch_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
                             uint8_t data[DHT_DATA_BYTES]) {
+  uint32_t low_duration;
+  uint32_t high_duration;
 
+  // Phase A
+  gpio_set_direction(pin,
+                     GPIO_MODE_OUTPUT_OD); // set pin direction to open-drain to
+                                           // prepare for LOW pull
+  gpio_set_level(pin, 0);
+  esp_rom_delay_us(20000); // delaying the process for 20mu as in 20
+                           // microseconds, while have set level to low this
+                           // keeps pulling for at least 18ms until i release
+  // the delay also gurantees no background process interupt the pulling
+  gpio_set_level(pin, 1);
+
+  step_dht_init_phase(pin, 'B');
+  step_dht_init_phase(pin, 'C');
+  step_dht_init_phase(pin, 'D');
+
+  for (int i = 0; i < DHT_DATA_BITS; i++) {
+    // Read LOW
+    if (dht_await_pin_state(pin, 65, 1, &low_duration) == ESP_ERR_TIMEOUT) {
+      ESP_LOGE(TAG, "LOW bit timeout");
+    }
+    // Read HIGH
+    if (dht_await_pin_state(pin, 75, 0, &high_duration) == ESP_ERR_TIMEOUT) {
+      ESP_LOGE(TAG, "HIGH bit timeout");
+    }
+
+    uint8_t b = i / 8;
+    uint8_t m = i % 8;
+
+    if (!m)
+      data[b] = 0;
+
+    data[b] |= (high_duration > low_duration) << (7 - m);
+  }
+
+  return ESP_OK;
 };
 
 static esp_err_t convert_data(dht_sensor_type_t sensor_type, uint8_t msb,
