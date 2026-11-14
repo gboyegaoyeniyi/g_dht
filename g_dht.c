@@ -14,8 +14,8 @@
 #define DHT_DATA_BYTES (DHT_DATA_BITS / 8)
 
 static portMUX_TYPE mux = portMUX_INITIALIZER_UNLOCKED;
-#define PORT_ENTER_CRITICAL() portENTER_CRITICAL(&mux);
-#define PORT_EXIT_CRITICAL() portEXIT_CRITICAL(&mux);
+#define PORT_ENTER_CRITICAL() portENTER_CRITICAL(&mux)
+#define PORT_EXIT_CRITICAL() portEXIT_CRITICAL(&mux)
 
 static const char *TAG = "dht";
 
@@ -43,7 +43,7 @@ static esp_err_t dht_await_pin_state(gpio_num_t pin, uint32_t timeout,
   }
 
   return ESP_ERR_TIMEOUT;
-};
+}
 
 static esp_err_t step_dht_init_phase(gpio_num_t pin, char phase) {
   switch (phase) {
@@ -60,8 +60,8 @@ static esp_err_t step_dht_init_phase(gpio_num_t pin, char phase) {
 
 static esp_err_t dht_fetch_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
                                 uint8_t data[DHT_DATA_BYTES]) {
-  uint32_t low_duration;
-  uint32_t high_duration;
+  uint32_t low_duration = 0;
+  uint32_t high_duration = 0;
   esp_err_t err = ESP_OK;
 
   // Phase A
@@ -113,11 +113,12 @@ static esp_err_t dht_fetch_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
     data[b] |= (high_duration > low_duration) << (7 - m);
   }
 
+  PORT_EXIT_CRITICAL();
   return ESP_OK;
-};
+}
 
-static esp_err_t dht_convert_data(dht_sensor_type_t sensor_type, uint8_t msb,
-                                  uint8_t lsb) {
+static int16_t dht_convert_data(dht_sensor_type_t sensor_type, uint8_t msb,
+                                uint8_t lsb) {
 
   (void)sensor_type;
   (void)lsb;
@@ -129,17 +130,15 @@ esp_err_t dht_read_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
   if (!humidity && !temperature)
     return ESP_ERR_INVALID_ARG;
 
-  uint8_t data[DHT_DATA_BITS] = {0};
+  if (sensor_type != DHT_TYPE_DHT11)
+    return ESP_ERR_NOT_SUPPORTED;
+
+  uint8_t data[DHT_DATA_BYTES] = {0};
 
   gpio_set_direction(pin, GPIO_MODE_OUTPUT_OD);
   gpio_set_level(pin, 1);
 
   esp_err_t result = dht_fetch_data(sensor_type, pin, data);
-  if (result == ESP_OK)
-    PORT_EXIT_CRITICAL()
-  // exit port to release time pause and allow all other process to run as
-  // needed
-
   // reseting pin direction as it would have been changed while fetching the
   // data
   gpio_set_direction(pin, GPIO_MODE_OUTPUT_OD);
@@ -161,7 +160,7 @@ esp_err_t dht_read_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
     *temperature = dht_convert_data(sensor_type, data[2], data[3]);
 
   return ESP_OK;
-};
+}
 
 esp_err_t dht_read_float_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
                               float *humidity, float *temperature) {
