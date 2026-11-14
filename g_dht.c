@@ -74,8 +74,8 @@ static esp_err_t step_dht_init_phase(gpio_num_t pin, char phase) {
   return err;
 }
 
-static esp_err_t fetch_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
-                            uint8_t data[DHT_DATA_BYTES]) {
+static esp_err_t dht_fetch_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
+                                uint8_t data[DHT_DATA_BYTES]) {
   uint32_t low_duration;
   uint32_t high_duration;
 
@@ -116,8 +116,8 @@ static esp_err_t fetch_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
   return ESP_OK;
 };
 
-static esp_err_t convert_data(dht_sensor_type_t sensor_type, uint8_t msb,
-                              uint8_t lsb) {
+static esp_err_t dht_convert_data(dht_sensor_type_t sensor_type, uint8_t msb,
+                                  uint8_t lsb) {
   int16_t data;
 
   if (sensor_type != DHT_TYPE_DHT11) {
@@ -129,7 +129,46 @@ static esp_err_t convert_data(dht_sensor_type_t sensor_type, uint8_t msb,
 };
 
 esp_err_t dht_read_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
-                        int16_t *humidity, int16_t *temperature) {};
+                        int16_t *humidity, int16_t *temperature) {
+  if (!humidity || !temperature)
+    return ESP_ERR_INVALID_ARG;
+
+  uint8_t data[DHT_DATA_BITS] = {0};
+
+  gpio_set_direction(pin, GPIO_MODE_OUTPUT_OD);
+  gpio_set_level(pin, 1);
+
+  // port critical to ensure absoluitely that the cpu interuupt do not interrup
+  // this time critical operation
+  PORT_ENTER_CRITICAL();
+  esp_err_t result = dht_fetch_data(sensor_type, pin, data);
+  if (result == ESP_OK)
+    PORT_EXIT_CRITICAL()
+  // exit port to release time pause and allow all other process to run as
+  // needed
+
+  // reseting pin direction as it would have been changed while fetching the
+  // data
+  gpio_set_direction(pin, GPIO_MODE_OUTPUT_OD);
+  gpio_set_level(pin, 1);
+
+  if (result != ESP_OK)
+    return result;
+
+  // Verify checksum, checksum is on the 5th byte
+  if (data[4] != ((data[0] + data[1] + data[2] + data[3]) & 0xff)) {
+    ESP_LOGE(TAG, "Checksum failed, invalid data from sensor");
+    return ESP_ERR_INVALID_CRC;
+  }
+
+  if (humidity)
+    *humidity = dht_convert_data(sensor_type, data[0], data[1]);
+
+  if (temperature)
+    *temperature = dht_convert_data(sensor_type, data[2], data[3]);
+
+  return ESP_OK;
+};
 
 esp_err_t dht_read_float_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
                               int16_t *humidity, int16_t *temperature) {};
