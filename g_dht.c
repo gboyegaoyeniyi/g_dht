@@ -117,7 +117,16 @@ static esp_err_t fetch_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
 };
 
 static esp_err_t convert_data(dht_sensor_type_t sensor_type, uint8_t msb,
-                              uint8_t lsb) {};
+                              uint8_t lsb) {
+  int16_t data;
+
+  if (sensor_type != DHT_TYPE_DHT11) {
+    return ESP_ERR_NOT_SUPPORTED;
+  }
+
+  data = msb * 10;
+  return data;
+};
 
 esp_err_t dht_read_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
                         int16_t *humidity, int16_t *temperature) {};
