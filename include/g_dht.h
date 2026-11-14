@@ -14,6 +14,6 @@ esp_err_t dht_read_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
                         int16_t *humidity, int16_t *temperature);
 
 esp_err_t dht_read_float_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
-                              int16_t *humidity, int16_t *temperature);
+                              float *humidity, float *temperature);
 
 #endif
