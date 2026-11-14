@@ -46,38 +46,23 @@ static esp_err_t dht_await_pin_state(gpio_num_t pin, uint32_t timeout,
 };
 
 static esp_err_t step_dht_init_phase(gpio_num_t pin, char phase) {
-  esp_err_t err = ESP_OK;
   switch (phase) {
   case 'B':
-    err = dht_await_pin_state(pin, 40, 0, NULL);
-    if (err != ESP_OK) {
-      ESP_LOGE(TAG, "Initialization error at phase 'B'\n");
-      PORT_EXIT_CRITICAL();
-    }
-    return err;
+    return dht_await_pin_state(pin, 40, 0, NULL);
   case 'C':
-    err = dht_await_pin_state(pin, 88, 1, NULL);
-    if (err != ESP_OK) {
-      ESP_LOGE(TAG, "Initialization error at phase 'C'\n");
-      PORT_EXIT_CRITICAL();
-    }
-    return err;
+    return dht_await_pin_state(pin, 88, 1, NULL);
   case 'D':
-    err = dht_await_pin_state(pin, 88, 0, NULL);
-    if (err != ESP_OK) {
-      ESP_LOGE(TAG, "Initialization error at phase 'D'\n");
-      PORT_EXIT_CRITICAL();
-    }
-    return err;
+    return dht_await_pin_state(pin, 88, 0, NULL);
   }
 
-  return err;
+  return ESP_ERR_INVALID_ARG;
 }
 
 static esp_err_t dht_fetch_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
                                 uint8_t data[DHT_DATA_BYTES]) {
   uint32_t low_duration;
   uint32_t high_duration;
+  esp_err_t err = ESP_OK;
 
   // Phase A
   gpio_set_direction(pin,
@@ -90,18 +75,33 @@ static esp_err_t dht_fetch_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
   // the delay also gurantees no background process interupt the pulling
   gpio_set_level(pin, 1);
 
-  step_dht_init_phase(pin, 'B');
-  step_dht_init_phase(pin, 'C');
-  step_dht_init_phase(pin, 'D');
+  // port critical to ensure absoluitely that the cpu interuupt do not interrup
+  // this time critical operation
+  PORT_ENTER_CRITICAL();
+
+  const char phases[] = {'B', 'C', 'D'};
+  for (int i = 0; i < 3; i++) {
+    err = step_dht_init_phase(pin, phases[i]);
+    if (err != ESP_OK) {
+      PORT_EXIT_CRITICAL();
+      ESP_LOGE(TAG, "Initialization error at phase '%c'", phases[i]);
+      return err;
+    }
+  }
 
   for (int i = 0; i < DHT_DATA_BITS; i++) {
     // Read LOW
-    if (dht_await_pin_state(pin, 65, 1, &low_duration) == ESP_ERR_TIMEOUT) {
+    if (dht_await_pin_state(pin, 65, 1, &low_duration) != ESP_OK) {
+      PORT_EXIT_CRITICAL();
       ESP_LOGE(TAG, "LOW bit timeout");
+      return ESP_ERR_TIMEOUT;
     }
+
     // Read HIGH
-    if (dht_await_pin_state(pin, 75, 0, &high_duration) == ESP_ERR_TIMEOUT) {
+    if (dht_await_pin_state(pin, 75, 0, &high_duration) != ESP_OK) {
+      PORT_EXIT_CRITICAL();
       ESP_LOGE(TAG, "HIGH bit timeout");
+      return ESP_ERR_TIMEOUT;
     }
 
     uint8_t b = i / 8;
@@ -118,14 +118,10 @@ static esp_err_t dht_fetch_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
 
 static esp_err_t dht_convert_data(dht_sensor_type_t sensor_type, uint8_t msb,
                                   uint8_t lsb) {
-  int16_t data;
 
-  if (sensor_type != DHT_TYPE_DHT11) {
-    return ESP_ERR_NOT_SUPPORTED;
-  }
-
-  data = msb * 10;
-  return data;
+  (void)sensor_type;
+  (void)lsb;
+  return (int16_t)(msb * 10);
 };
 
 esp_err_t dht_read_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
@@ -138,9 +134,6 @@ esp_err_t dht_read_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
   gpio_set_direction(pin, GPIO_MODE_OUTPUT_OD);
   gpio_set_level(pin, 1);
 
-  // port critical to ensure absoluitely that the cpu interuupt do not interrup
-  // this time critical operation
-  PORT_ENTER_CRITICAL();
   esp_err_t result = dht_fetch_data(sensor_type, pin, data);
   if (result == ESP_OK)
     PORT_EXIT_CRITICAL()
