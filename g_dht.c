@@ -45,6 +45,11 @@ static esp_err_t dht_await_pin_state(gpio_num_t pin, uint32_t timeout,
   return ESP_ERR_TIMEOUT;
 }
 
+/**
+ * Steps through the phases of inititalizing the dht sensor
+ * Though I feel like this switch statements probably wastes time
+ * since am using a loop to call it later on
+ */
 static esp_err_t step_dht_init_phase(gpio_num_t pin, char phase) {
   switch (phase) {
   case 'B':
@@ -58,6 +63,10 @@ static esp_err_t step_dht_init_phase(gpio_num_t pin, char phase) {
   return ESP_ERR_INVALID_ARG;
 }
 
+
+/**
+ * Initialized communication with the dht sensor and retrive the 40 bits data
+ */
 static esp_err_t dht_fetch_data(dht_sensor_type_t sensor_type, gpio_num_t pin,
                                 uint8_t data[DHT_DATA_BYTES]) {
   uint32_t low_duration = 0;
